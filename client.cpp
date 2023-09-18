@@ -4,11 +4,11 @@
 #include <arpa/inet.h>
 #include <string.h>
 
-int main() {
+int main(int argc, char **argv) {
+	(void)argc;
     int sock = 0;
     struct sockaddr_in serv_addr;
-    char buffer[1024] = {0};
-    const char* message = "Hello from clientHello from clientHello from client";
+    const char* message = argv[1];
 
     // 소켓 생성
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -36,8 +36,20 @@ int main() {
     std::cout << "Message sent" << std::endl;
 
     // 서버로부터의 응답 수신
-    read(sock, buffer, 1024);
-    std::cout << "Server: " << buffer << std::endl;
+	char buffer[1024] = {0};
+	size_t total = 0;
+	while (1) {
+		memset(buffer, 0, 1024);
+		int size = read(sock, buffer, 1023);
+		total += size;
+		if (size > 0) {
+			std::cout << buffer << "[" << size << "]" << std::endl;
+		}
+		if (size <= 0 || total >= strlen(message)) {
+			break;
+		}
+	}
+	std::cout << std::endl;
 
     close(sock);
 
