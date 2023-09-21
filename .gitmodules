@@ -1,0 +1,3 @@
+[submodule "practice-parser"]
+	path = practice-parser
+	url = git@github.com:sindydwns/practice-parser.git
