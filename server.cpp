@@ -22,11 +22,15 @@
 #include "practice-parser/parser/Parser.hpp"
 
 #define SIZE 42
+#define TIMEOUT 3
 
+const struct timespec timer = { TIMEOUT, 0 };
 class Client
 {
 public:
 	ParseStream stream;
+	std::string res;
+	size_t resIdx;
 };
 
 Parser *createParser()
@@ -40,13 +44,13 @@ Parser *createParser()
     header->addPattern(new PatternReadUntil("\n", "value"));
     PatternOptionGroup *headers = new PatternOptionGroup(0, 999, "headers");
     headers->addPattern(header);
-    PatternReadAll *body = new PatternReadAll("body");
+    // PatternReadAll *body = new PatternReadAll("body");
     PatternSequenceGroup *req = new PatternSequenceGroup("req");
     req->addPattern(startline);
-    req->addPattern(new PatternEqual("\n", "nextline"));
+    req->addPattern(new PatternReadUntil("\n", "nextline"));
     req->addPattern(headers);
-    req->addPattern(new PatternEqual("\n", "nextline"));
-    req->addPattern(body);
+    req->addPattern(new PatternReadUntil("\n", "nextline"));
+    // req->addPattern(body);
 	return new Parser(req);
 }
 
@@ -77,28 +81,68 @@ int main() {
 		int nev = kevent(kq, NULL, 0, eventList, 1024, NULL);
 		for (int i = 0; i < nev; i++) {
 			int fd = eventList[i].ident;
-			
+			Client *client = reinterpret_cast<Client*>(eventList[i].udata);
+
+			// -- accept client --
+
 			if (fd == server_fd) {
 				int new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
 				std::cout << "new_socket [" << new_socket << "]" << std::endl;
 				
+				Client *new_client = new Client();
+				new_client->stream = parser->makeStream();
+				new_client->res = "";
+				new_client->resIdx = 0;
+
 				struct kevent clientEvent;
-				EV_SET(&clientEvent, new_socket, EVFILT_READ, EV_ADD, 0, 0, NULL);
-				kevent(kq, &clientEvent, 1, NULL, 0, NULL);
-							}
-else {
+				EV_SET(&clientEvent, new_socket, EVFILT_READ, EV_ADD, 0, 0, new_client);
+				kevent(kq, &clientEvent, 1, NULL, 0, &timer);
+				continue;
+			}
+
+			// -- client act --
+
+			if (eventList[i].filter == EVFILT_READ) {
 				memset(buffer, 0, SIZE);
 				int valread = read(fd, buffer, SIZE - 1);
-								std::cout << fd << ": " << buffer << "[" << valread << "]" << std::endl;
+				if (valread > 0) {
+					std::string buff = std::string(buffer);
+					if (client->stream.next(buff) == false) {
+						client->res = "HTTP/1.1 200 OK\n\n";
+						if (client->stream.isState(VALID)) {
+							client->res += client->stream.getResult().toString();
+						}
+						if (client->stream.isState(INVALID)) {
+							client->res += "req is invalid";
+						}
+						struct kevent clientEvent;
+						EV_SET(&clientEvent, fd, EVFILT_READ, EV_DELETE, 0, 0, client);
+						EV_SET(&clientEvent, fd, EVFILT_WRITE, EV_ADD, 0, 0, client);
+						kevent(kq, &clientEvent, 1, NULL, 0, &timer);
+					}
+				}
+				std::cout << fd << ": " << buffer << "[" << valread << "]" << std::endl;
 				if (valread == 0) {
 					std::cout << fd << " closed" << std::endl;
-										close(fd);
+					delete client;
+					close(fd);
 				}
-else {
-					send(fd, buffer, valread, 0);
 			}
+
+			if (eventList[i].filter == EVFILT_WRITE) {
+				std::string &res = client->res;
+				size_t i = client->resIdx;
+				ssize_t written = write(fd, &(res.at(i)), res.size() - i);
+				if (written > 0) client->resIdx += written;
+			}
+
+			if (eventList[i].filter == EVFILT_TIMER) {
+				std::cout << fd << " timeover" << std::endl;
+				delete client;
+				close(fd);
 			}
 		}
 	}
-	    return 0;
+	delete parser;
+    return 0;
 }
