@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/select.h>
@@ -40,7 +41,7 @@ Parser *createParser()
     startline->addPattern(new PatternWord("route"));
     startline->addPattern(new PatternWord("http-version"));
     PatternSequenceGroup *header = new PatternSequenceGroup("header");
-    header->addPattern(new PatternReadUntil(":", "key"));
+    header->addPattern(new PatternReadUntil(":", "\n", "key"));
     header->addPattern(new PatternReadUntil("\n", "value"));
     PatternOptionGroup *headers = new PatternOptionGroup(0, 999, "headers");
     headers->addPattern(header);
@@ -108,12 +109,25 @@ int main() {
 				if (valread > 0) {
 					std::string buff = std::string(buffer);
 					if (client->stream.next(buff) == false) {
-						client->res = "HTTP/1.1 200 OK\n\n";
+						client->res = "HTTP/1.1 200 OK\n";
 						if (client->stream.isState(VALID)) {
-							client->res += client->stream.getResult().toString();
+							std::stringstream ss;
+							std::string str = client->stream.getResult().toString();
+							ss << "Content-Type: text/html\n";
+							ss << "Content-Length: " << str.size() << "\n";
+							ss << "Connection: keep-alive\n";
+							client->res += ss.str();
+							client->res += "\r\n";
+							client->res += str;
 						}
 						if (client->stream.isState(INVALID)) {
-							client->res += "req is invalid";
+							std::stringstream ss;
+							std::string str = "req is invalid\n";
+							ss << "Content-Type: text/html\n";
+							ss << "Content-Length: " << str.size() << "\n";
+							ss << "Connection: keep-alive\n";
+							client->res += "\r\n";
+							client->res += str;
 						}
 						struct kevent clientEvent;
 						EV_SET(&clientEvent, fd, EVFILT_READ, EV_DELETE, 0, 0, client);
@@ -131,11 +145,19 @@ int main() {
 
 			if (eventList[i].filter == EVFILT_WRITE) {
 				std::string &res = client->res;
-				size_t i = client->resIdx;
-				ssize_t written = write(fd, &(res.at(i)), res.size() - i);
-				if (written > 0) client->resIdx += written;
+				if (res.size() - client->resIdx > 0) {
+					size_t i = client->resIdx;
+					ssize_t written = write(fd, &(res.at(i)), res.size() - i);
+					if (written > 0) client->resIdx += written;
+				}
+				if (res.size() == client->resIdx) {
+					struct kevent clientEvent;
+					EV_SET(&clientEvent, fd, EVFILT_WRITE, EV_DELETE, 0, 0, client);
+					kevent(kq, &clientEvent, 1, NULL, 0, &timer);
+				}
 			}
 
+			// timer is not working... why?
 			if (eventList[i].filter == EVFILT_TIMER) {
 				std::cout << fd << " timeover" << std::endl;
 				delete client;
