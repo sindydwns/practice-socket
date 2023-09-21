@@ -12,9 +12,48 @@
 #include <sys/event.h>
 #include <sys/time.h>
 
+// for parser
+#include "practice-parser/parser/PatternSequenceGroup.hpp"
+#include "practice-parser/parser/PatternWord.hpp"
+#include "practice-parser/parser/PatternReadUntil.hpp"
+#include "practice-parser/parser/PatternOptionGroup.hpp"
+#include "practice-parser/parser/PatternReadAll.hpp"
+#include "practice-parser/parser/PatternEqual.hpp"
+#include "practice-parser/parser/Parser.hpp"
+
 #define SIZE 42
 
+class Client
+{
+public:
+	ParseStream stream;
+};
+
+Parser *createParser()
+{
+	PatternSequenceGroup *startline = new PatternSequenceGroup("startline");
+    startline->addPattern(new PatternWord("method"));
+    startline->addPattern(new PatternWord("route"));
+    startline->addPattern(new PatternWord("http-version"));
+    PatternSequenceGroup *header = new PatternSequenceGroup("header");
+    header->addPattern(new PatternReadUntil(":", "key"));
+    header->addPattern(new PatternReadUntil("\n", "value"));
+    PatternOptionGroup *headers = new PatternOptionGroup(0, 999, "headers");
+    headers->addPattern(header);
+    PatternReadAll *body = new PatternReadAll("body");
+    PatternSequenceGroup *req = new PatternSequenceGroup("req");
+    req->addPattern(startline);
+    req->addPattern(new PatternEqual("\n", "nextline"));
+    req->addPattern(headers);
+    req->addPattern(new PatternEqual("\n", "nextline"));
+    req->addPattern(body);
+	return new Parser(req);
+}
+
 int main() {
+
+	Parser *parser = createParser();
+
     int server_fd;
     struct sockaddr_in address;
     int addrlen = sizeof(address);
@@ -38,7 +77,7 @@ int main() {
 		int nev = kevent(kq, NULL, 0, eventList, 1024, NULL);
 		for (int i = 0; i < nev; i++) {
 			int fd = eventList[i].ident;
-
+			
 			if (fd == server_fd) {
 				int new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
 				std::cout << "new_socket [" << new_socket << "]" << std::endl;
@@ -46,20 +85,20 @@ int main() {
 				struct kevent clientEvent;
 				EV_SET(&clientEvent, new_socket, EVFILT_READ, EV_ADD, 0, 0, NULL);
 				kevent(kq, &clientEvent, 1, NULL, 0, NULL);
-			}
-			else {
+							}
+else {
 				memset(buffer, 0, SIZE);
 				int valread = read(fd, buffer, SIZE - 1);
-				std::cout << fd << ": " << buffer << "[" << valread << "]" << std::endl;
+								std::cout << fd << ": " << buffer << "[" << valread << "]" << std::endl;
 				if (valread == 0) {
 					std::cout << fd << " closed" << std::endl;
-					close(fd);
+										close(fd);
 				}
-				else {
+else {
 					send(fd, buffer, valread, 0);
-				}
+			}
 			}
 		}
 	}
-    return 0;
+	    return 0;
 }
