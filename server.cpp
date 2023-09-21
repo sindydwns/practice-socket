@@ -19,7 +19,6 @@ int main() {
     struct sockaddr_in address;
     int addrlen = sizeof(address);
     char buffer[SIZE] = {0};
-	std::vector<int> clientSockets;
     
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     address.sin_family = AF_INET;
@@ -42,7 +41,6 @@ int main() {
 
 			if (fd == server_fd) {
 				int new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-				clientSockets.push_back(new_socket);
 				std::cout << "new_socket [" << new_socket << "]" << std::endl;
 				
 				struct kevent clientEvent;
@@ -54,7 +52,6 @@ int main() {
 				int valread = read(fd, buffer, SIZE - 1);
 				std::cout << fd << ": " << buffer << "[" << valread << "]" << std::endl;
 				if (valread == 0) {
-					clientSockets.erase(std::find(clientSockets.begin(), clientSockets.end(), fd));
 					std::cout << fd << " closed" << std::endl;
 					close(fd);
 				}
