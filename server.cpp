@@ -114,11 +114,12 @@ int main() {
 							std::stringstream ss;
 							std::string str = client->stream.getResult().toString();
 							ss << "Content-Type: text/html\n";
-							ss << "Content-Length: " << str.size() << "\n";
+							ss << "Content-Length: " << str.size() * 50000 << "\n";
 							ss << "Connection: keep-alive\n";
 							client->res += ss.str();
 							client->res += "\r\n";
-							client->res += str;
+							for (int i = 0; i < 50000; i++)
+								client->res += str;
 						}
 						if (client->stream.isState(INVALID)) {
 							std::stringstream ss;
@@ -147,6 +148,8 @@ int main() {
 				std::string &res = client->res;
 				if (res.size() - client->resIdx > 0) {
 					size_t i = client->resIdx;
+					// 클라이언트가 먼저 통신을 끊으면 프로그램이 그냥 종료 됨.
+					// 한 번에 처리할 수 있는 write 양은 얼마나 될까?
 					ssize_t written = write(fd, &(res.at(i)), res.size() - i);
 					if (written > 0) client->resIdx += written;
 				}
